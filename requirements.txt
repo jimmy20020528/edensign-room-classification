@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn==0.30.0
+python-multipart==0.0.12
+numpy==1.26.4
+torch==2.3.1
+torchvision==0.18.1
+transformers==4.44.2
+scikit-learn==1.5.2
+joblib==1.4.2
+Pillow==10.4.0
