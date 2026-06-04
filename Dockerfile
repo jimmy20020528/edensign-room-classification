@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1 \
  && pip install --no-cache-dir \
         fastapi==0.115.0 uvicorn==0.30.0 python-multipart==0.0.12 \
         numpy==1.26.4 transformers==4.44.2 scikit-learn==1.5.2 \
-        joblib==1.4.2 Pillow==10.4.0
+        joblib==1.4.2 Pillow==10.4.0 hf_transfer
 
 # Pre-download DINOv2-base so the container is ready immediately (no first-call download)
 RUN python -c "from transformers import AutoImageProcessor, AutoModel; \

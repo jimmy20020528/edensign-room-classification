@@ -8,3 +8,5 @@ transformers==4.44.2
 scikit-learn==1.5.2
 joblib==1.4.2
 Pillow==10.4.0
+# RunPod base images set HF_HUB_ENABLE_HF_TRANSFER=1; this satisfies it (also speeds DINOv2 download)
+hf_transfer
