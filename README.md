@@ -14,22 +14,35 @@ groups photos that show the same physical room.
 ## API
 
 ### `POST /classify-rooms`
-JSON body: `{"image_urls": ["https://...", ...]}` — 1–30 publicly-reachable image
-URLs. The service downloads each URL server-side and classifies it.
 
-```bash
-curl -X POST http://HOST:8003/classify-rooms \
-  -H "Content-Type: application/json" \
-  -d '{"image_urls": ["https://content.edensign.io/images/abc.jpg", "https://content.edensign.io/images/def.jpg"]}'
+Classify 1–30 listing photos by room type and occupancy, and group photos that
+show the same physical room. You send image URLs; the service downloads them
+server-side and processes them.
+
+**Request** — `Content-Type: application/json`
+
+```json
+{
+  "image_urls": [
+    "https://content.edensign.io/images/abc.jpg",
+    "https://content.edensign.io/images/def.jpg",
+    "https://content.edensign.io/images/ghi.jpg"
+  ]
+}
 ```
 
-Response `200`:
+| field | type | required | description |
+|---|---|---|---|
+| `image_urls` | string[] | yes | 1–30 publicly-reachable image URLs (jpg/png), downloaded server-side |
+
+**Response** — `200 OK`
+
 ```json
 {
   "photos": [
-    {"index": 0, "room_type": "kitchen",  "occupancy": "furnished", "confidence": 0.91, "group_id": 1},
-    {"index": 1, "room_type": "kitchen",  "occupancy": "furnished", "confidence": 0.88, "group_id": 1},
-    {"index": 2, "room_type": "bedroom",  "occupancy": "empty",     "confidence": 0.79, "group_id": 2}
+    {"index": 0, "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.91, "group_id": 1},
+    {"index": 1, "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.88, "group_id": 1},
+    {"index": 2, "room_type": "bedroom", "occupancy": "empty",     "confidence": 0.79, "group_id": 2}
   ],
   "groups": [
     {"group_id": 1, "room_type": "kitchen", "occupancy": "furnished", "photo_indices": [0, 1]},
@@ -37,16 +50,49 @@ Response `200`:
   ]
 }
 ```
-- `index` = position of the URL in the request `image_urls` array (0-based).
-- `group_id` links photos of the same physical room; `groups` is the inverse view.
-- Errors: `400` (0 or >30 urls), `502` (an image URL failed to download), `503` (models still loading).
+
+`photos[]` — one object per input URL, in the same order:
+
+| field | type | description |
+|---|---|---|
+| `index` | int | position in the request `image_urls` array (0-based) |
+| `room_type` | string (enum) | one of the 13 values below |
+| `occupancy` | string (enum) | `"furnished"` or `"empty"` |
+| `confidence` | float | 0.0–1.0, confidence of `room_type` |
+| `group_id` | int | photos sharing a `group_id` are the same physical room |
+
+`groups[]` — the inverse view, one object per distinct room:
+
+| field | type | description |
+|---|---|---|
+| `group_id` | int | matches `group_id` in `photos[]` |
+| `room_type` | string (enum) | room type of this group |
+| `occupancy` | string (enum) | `"furnished"` or `"empty"` |
+| `photo_indices` | int[] | indices of the photos in this room |
+
+**`room_type` enum** (13 values): `bathroom`, `kitchen`, `bedroom`, `living`,
+`dining`, `hallway`, `home_office`, `balcony`, `outdoor`, `theatre`, `kidsroom`,
+`living_bedroom`, `living_dining`.
+
+**Errors** — body is always `{"detail": "<message>"}`:
+
+| status | when | example body |
+|---|---|---|
+| `400` | `image_urls` empty | `{"detail": "At least 1 image_url required"}` |
+| `400` | more than 30 urls | `{"detail": "Max 30 images"}` |
+| `502` | a URL could not be downloaded | `{"detail": "Failed to download image 2: https://... (...)"}` |
+| `503` | service still loading models | `{"detail": "Models not loaded"}` |
 
 ### `GET /health`
+
+**Response** — `200 OK`
+
 ```json
 {"status": "ok", "ready": true}
 ```
-`ready` is `false` until DINOv2 + classifiers finish loading on startup. Poll
-this before sending traffic.
+
+`ready` is `false` until DINOv2 + the classifiers finish loading on startup.
+Poll this and wait for `ready: true` before sending classify traffic.
 
 ## Run with Docker (recommended)
 
