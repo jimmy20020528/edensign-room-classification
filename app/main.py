@@ -1,20 +1,22 @@
 """cv-models FastAPI service — room classification + instance grouping.
 
 Startup: loads DINOv2 + three sklearn classifiers from artifacts/.
-Endpoint: POST /classify-rooms — accepts 1-30 images, returns per-photo
-room_type/occupancy/confidence/group_id and groups list.
+Endpoint: POST /classify-rooms — accepts 1-30 image URLs (JSON), downloads them,
+returns per-photo room_type/occupancy/confidence/group_id and groups list.
 """
 import json
 import sys
 import tempfile
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import joblib
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -94,20 +96,33 @@ async def health() -> dict:
     return {"status": "ok", "ready": _state.get("ready", False)}
 
 
+class ClassifyRequest(BaseModel):
+    image_urls: list[str]
+
+
+_DOWNLOAD_UA = "Mozilla/5.0 (edensign-room-classification)"
+
+
 @app.post("/classify-rooms")
-async def classify_rooms(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+async def classify_rooms(req: ClassifyRequest) -> dict[str, Any]:
     if not _state.get("ready"):
         raise HTTPException(503, "Models not loaded")
-    if len(files) == 0:
-        raise HTTPException(400, "At least 1 image required")
-    if len(files) > 30:
+    urls = req.image_urls
+    if len(urls) == 0:
+        raise HTTPException(400, "At least 1 image_url required")
+    if len(urls) > 30:
         raise HTTPException(400, "Max 30 images")
 
     tmp_paths: list[Path] = []
     try:
-        for f in files:
-            content = await f.read()
-            suffix = Path(f.filename or "img.jpg").suffix or ".jpg"
+        for i, url in enumerate(urls):
+            suffix = Path(url.split("?")[0]).suffix or ".jpg"
+            dl_req = urllib.request.Request(url, headers={"User-Agent": _DOWNLOAD_UA})
+            try:
+                with urllib.request.urlopen(dl_req, timeout=30) as resp:
+                    content = resp.read()
+            except Exception as e:
+                raise HTTPException(502, f"Failed to download image {i}: {url} ({e})")
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.write(content)
             tmp.close()

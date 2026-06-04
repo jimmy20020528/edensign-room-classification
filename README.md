@@ -14,13 +14,13 @@ groups photos that show the same physical room.
 ## API
 
 ### `POST /classify-rooms`
-`multipart/form-data`, field **`files`** = 1–30 image files (jpg/png).
+JSON body: `{"image_urls": ["https://...", ...]}` — 1–30 publicly-reachable image
+URLs. The service downloads each URL server-side and classifies it.
 
 ```bash
 curl -X POST http://HOST:8003/classify-rooms \
-  -F "files=@room1.jpg" \
-  -F "files=@room2.jpg" \
-  -F "files=@room3.jpg"
+  -H "Content-Type: application/json" \
+  -d '{"image_urls": ["https://content.edensign.io/images/abc.jpg", "https://content.edensign.io/images/def.jpg"]}'
 ```
 
 Response `200`:
@@ -37,9 +37,9 @@ Response `200`:
   ]
 }
 ```
-- `index` = position of the file in the request (0-based).
+- `index` = position of the URL in the request `image_urls` array (0-based).
 - `group_id` links photos of the same physical room; `groups` is the inverse view.
-- Errors: `400` (0 or >30 images), `503` (models still loading).
+- Errors: `400` (0 or >30 urls), `502` (an image URL failed to download), `503` (models still loading).
 
 ### `GET /health`
 ```json
