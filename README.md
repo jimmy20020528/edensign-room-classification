@@ -39,40 +39,49 @@ server-side and processes them.
 
 ```json
 {
-  "photos": [
-    {"index": 0, "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.91, "group_id": 1},
-    {"index": 1, "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.88, "group_id": 1},
-    {"index": 2, "room_type": "bedroom", "occupancy": "empty",     "confidence": 0.79, "group_id": 2}
-  ],
   "groups": [
-    {"group_id": 1, "room_type": "kitchen", "occupancy": "furnished", "photo_indices": [0, 1]},
-    {"group_id": 2, "room_type": "bedroom", "occupancy": "empty",     "photo_indices": [2]}
+    {
+      "id": 1,
+      "room_type": "kitchen",
+      "occupancy": "furnished",
+      "photos": [
+        {"url": "https://content.edensign.io/images/abc.jpg", "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.91},
+        {"url": "https://content.edensign.io/images/def.jpg", "room_type": "kitchen", "occupancy": "furnished", "confidence": 0.88}
+      ]
+    },
+    {
+      "id": 2,
+      "room_type": "bed",
+      "occupancy": "empty",
+      "photos": [
+        {"url": "https://content.edensign.io/images/ghi.jpg", "room_type": "bed", "occupancy": "empty", "confidence": 0.79}
+      ]
+    }
   ]
 }
 ```
 
-`photos[]` — one object per input URL, in the same order:
+`groups[]` — one object per distinct physical room:
 
 | field | type | description |
 |---|---|---|
-| `index` | int | position in the request `image_urls` array (0-based) |
-| `room_type` | string (enum) | one of the 13 values below |
+| `id` | int | group id (1-based); photos in the same group are the same physical room |
+| `room_type` | string (enum) | room type of this group (one of the values below) |
 | `occupancy` | string (enum) | `"furnished"` or `"empty"` |
-| `confidence` | float | 0.0–1.0, confidence of `room_type` |
-| `group_id` | int | photos sharing a `group_id` are the same physical room |
+| `photos` | object[] | the photos that belong to this room |
 
-`groups[]` — the inverse view, one object per distinct room:
+`groups[].photos[]` — one object per input URL assigned to this room:
 
 | field | type | description |
 |---|---|---|
-| `group_id` | int | matches `group_id` in `photos[]` |
-| `room_type` | string (enum) | room type of this group |
+| `url` | string | the source image URL from the request (use this to match back to your input) |
+| `room_type` | string (enum) | same as the group's `room_type` |
 | `occupancy` | string (enum) | `"furnished"` or `"empty"` |
-| `photo_indices` | int[] | indices of the photos in this room |
+| `confidence` | float | 0.0–1.0, model confidence of `room_type` |
 
-**`room_type` enum** (13 values): `bathroom`, `kitchen`, `bedroom`, `living`,
-`dining`, `hallway`, `home_office`, `balcony`, `outdoor`, `theatre`, `kidsroom`,
-`living_bedroom`, `living_dining`.
+**`room_type` enum** (13 values, aligned with the backend `RoomType`): `living`,
+`bed`, `kitchen`, `dining`, `bathroom`, `home_office`, `outdoor`, `kids_room`,
+`hallway`, `theatre`, `living_bedroom`, `living_dining`, `balcony`.
 
 **Errors** — body is always `{"detail": "<message>"}`:
 

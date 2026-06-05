@@ -2,7 +2,9 @@
 
 Startup: loads DINOv2 + three sklearn classifiers from artifacts/.
 Endpoint: POST /classify-rooms — accepts 1-30 image URLs (JSON), downloads them,
-returns per-photo room_type/occupancy/confidence/group_id and groups list.
+returns a `groups` list: each group has id/room_type/occupancy plus the photos
+(url + room_type/occupancy/confidence) that belong to it. room_type values match
+the backend RoomType enum.
 """
 import json
 import sys
@@ -22,6 +24,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 ARTIFACTS = ROOT / "artifacts"
+
+# Map internal model class names -> backend RoomType enum values.
+# Only these two differ; every other class name is already identical to the enum.
+_ROOM_TYPE_OUTPUT = {
+    "bedroom": "bed",
+    "kidsroom": "kids_room",
+}
+
+
+def _map_room_type(rt: str) -> str:
+    """Translate an internal class name to the backend RoomType enum value."""
+    return _ROOM_TYPE_OUTPUT.get(rt, rt)
 
 # CLS-based thresholds (fallback when VLAD vocab not available).
 # Empirical: true same-room cosine ~0.74, different-room-same-listing ~0.61.
@@ -127,13 +141,13 @@ async def classify_rooms(req: ClassifyRequest) -> dict[str, Any]:
             tmp.write(content)
             tmp.close()
             tmp_paths.append(Path(tmp.name))
-        return _classify_and_group(tmp_paths)
+        return _classify_and_group(tmp_paths, urls)
     finally:
         for p in tmp_paths:
             p.unlink(missing_ok=True)
 
 
-def _classify_and_group(image_paths: list[Path]) -> dict[str, Any]:
+def _classify_and_group(image_paths: list[Path], urls: list[str]) -> dict[str, Any]:
     # Lazy import: deferred heavy imports, no-op cache hit at request time.
     from group_instances import (  # deferred import
         count_ransac_inliers,
@@ -220,34 +234,28 @@ def _classify_and_group(image_paths: list[Path]) -> dict[str, Any]:
     # ALL nodes (including singletons as single-element components), so the
     # loop above covers every photo index. No ungrouped fallback is needed.
 
-    # Build response
-    photos = [
-        {
-            "index": i,
-            "room_type": room_types[i],
-            "occupancy": occ_preds[i],
-            "confidence": confidences[i],
-            "group_id": group_id_map[i],
-        }
-        for i in range(N)
-    ]
-
-    groups_by_id: dict[int, dict] = {}
-    for p in photos:
-        gid = p["group_id"]
-        if gid not in groups_by_id:
-            groups_by_id[gid] = {
-                "group_id": gid,
-                "room_type": p["room_type"],
-                "occupancy": p["occupancy"],
-                "photo_indices": [],
+    # Build response: photos nested under their group; room_type mapped to the
+    # backend RoomType enum; each photo carries its source URL.
+    groups_map: dict[int, dict[str, Any]] = {}
+    for i in range(N):
+        gid = group_id_map[i]
+        rt = _map_room_type(room_types[i])
+        occ = occ_preds[i]
+        if gid not in groups_map:
+            groups_map[gid] = {
+                "id": gid,
+                "room_type": rt,
+                "occupancy": occ,
+                "photos": [],
             }
-        groups_by_id[gid]["photo_indices"].append(p["index"])
+        groups_map[gid]["photos"].append({
+            "url": urls[i],
+            "room_type": rt,
+            "occupancy": occ,
+            "confidence": confidences[i],
+        })
 
-    return {
-        "photos": photos,
-        "groups": sorted(groups_by_id.values(), key=lambda g: g["group_id"]),
-    }
+    return {"groups": [groups_map[gid] for gid in sorted(groups_map)]}
 
 
 if __name__ == "__main__":
