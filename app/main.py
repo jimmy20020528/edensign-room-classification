@@ -118,7 +118,7 @@ _DOWNLOAD_UA = "Mozilla/5.0 (edensign-room-classification)"
 
 
 @app.post("/classify-rooms")
-async def classify_rooms(req: ClassifyRequest) -> dict[str, Any]:
+def classify_rooms(req: ClassifyRequest) -> dict[str, Any]:
     if not _state.get("ready"):
         raise HTTPException(503, "Models not loaded")
     urls = req.image_urls
