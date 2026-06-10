@@ -10,6 +10,7 @@ import json
 import sys
 import tempfile
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -129,14 +130,22 @@ def classify_rooms(req: ClassifyRequest) -> dict[str, Any]:
 
     tmp_paths: list[Path] = []
     try:
-        for i, url in enumerate(urls):
-            suffix = Path(url.split("?")[0]).suffix or ".jpg"
+        def _download(url: str) -> bytes:
             dl_req = urllib.request.Request(url, headers={"User-Agent": _DOWNLOAD_UA})
-            try:
-                with urllib.request.urlopen(dl_req, timeout=30) as resp:
-                    content = resp.read()
-            except Exception as e:
-                raise HTTPException(502, f"Failed to download image {i}: {url} ({e})")
+            with urllib.request.urlopen(dl_req, timeout=30) as resp:
+                return resp.read()
+
+        contents: list[bytes] = [b""] * len(urls)
+        with ThreadPoolExecutor(max_workers=min(len(urls), 16)) as pool:
+            futures = {pool.submit(_download, url): i for i, url in enumerate(urls)}
+            for fut in futures:
+                i = futures[fut]
+                try:
+                    contents[i] = fut.result()
+                except Exception as e:
+                    raise HTTPException(502, f"Failed to download image {i}: {urls[i]} ({e})")
+        for i, content in enumerate(contents):
+            suffix = Path(urls[i].split("?")[0]).suffix or ".jpg"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.write(content)
             tmp.close()
