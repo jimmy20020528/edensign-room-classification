@@ -3,8 +3,12 @@
 Startup: loads DINOv2 + three sklearn classifiers from artifacts/.
 Endpoint: POST /classify-rooms — accepts 1-30 image URLs (JSON), downloads them,
 returns a `groups` list: each group has id/room_type/occupancy plus the photos
-(url + room_type/occupancy/confidence) that belong to it. room_type values match
-the backend RoomType enum.
+(url + room_type/occupancy/confidence) that belong to it.
+
+`room_type` values follow the shared naming standard (see `_ROOM_TYPE_OUTPUT`):
+    bathroom  kitchen  bedroom  living_room  dining_room  hallway  home_office
+    balcony   outdoor  home_theater  kids_room  living_bedroom  living_dining
+`occupancy` is `furnished` | `empty`.
 """
 import json
 import sys
@@ -26,17 +30,54 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 ARTIFACTS = ROOT / "artifacts"
 
-# Map internal model class names -> backend RoomType enum values.
-# Only these two differ; every other class name is already identical to the enum.
+# Map internal model class names -> the naming standard the backend, staging and
+# 3D APIs all speak (Haodong, 2026-09-04). Four of the 13 class names differ; the
+# other nine are already identical and are deliberately absent from this dict.
+#
+# The previous version of this map emitted `bed` for bedroom. That was correct
+# against the older backend enum and is now wrong — the standard spells it
+# `bedroom`, which is also the classifier's own class name, so the entry is gone
+# rather than inverted.
+#
+# `living_bedroom` and `living_dining` are left alone on purpose. They are single
+# enum members naming an open-plan room, not compositions of `living` + `bedroom`,
+# so mechanically applying `living -> living_room` to them would produce
+# `living_room_bedroom`, which is not in the standard.
 _ROOM_TYPE_OUTPUT = {
-    "bedroom": "bed",
+    "living": "living_room",
+    "dining": "dining_room",
+    "theatre": "home_theater",   # British -> American spelling, plus `home_` prefix
     "kidsroom": "kids_room",
+}
+
+# Old spellings this service used to emit, kept so a caller that still sends or
+# stores them can be normalised instead of silently missing. Not used on the
+# response path — `_map_room_type` only ever emits the standard names.
+_ROOM_TYPE_LEGACY_ALIASES = {
+    "bed": "bedroom",
+    "living": "living_room",
+    "dining": "dining_room",
+    "theatre": "home_theater",
+    "theater": "home_theater",
+    "kidsroom": "kids_room",
+    "home-office": "home_office",
+    "living+bedroom": "living_bedroom",
+    "living+dining": "living_dining",
 }
 
 
 def _map_room_type(rt: str) -> str:
-    """Translate an internal class name to the backend RoomType enum value."""
+    """Translate an internal class name to the standard room_type value."""
     return _ROOM_TYPE_OUTPUT.get(rt, rt)
+
+
+def normalize_room_type(rt: str) -> str:
+    """Accept either the standard name or any legacy spelling; return the standard.
+
+    Exists so this service can be called with names produced by an older build
+    during the transition. Idempotent: a standard name maps to itself.
+    """
+    return _ROOM_TYPE_LEGACY_ALIASES.get(rt, rt)
 
 # CLS-based thresholds (fallback when VLAD vocab not available).
 # Empirical: true same-room cosine ~0.74, different-room-same-listing ~0.61.
